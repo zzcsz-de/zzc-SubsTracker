@@ -59,6 +59,7 @@ function buildDedupeBucket(rule, nowParts) {
   const ymd = `${nowParts.year}${String(nowParts.month).padStart(2, '0')}${String(nowParts.day).padStart(2, '0')}`;
   const isDayRule =
     rule.type === 'on_expiry' ||
+    rule.type === 'weekday' ||
     (rule.type === 'before_expiry' && rule.unit !== 'hours');
   return isDayRule ? ymd : `${ymd}${nowParts.hourString}`;
 }
@@ -96,6 +97,11 @@ export async function checkExpiringSubscriptions(env) {
     const config = await getConfig(env);
     const timezone = config.TIMEZONE || 'UTC';
     const now = getNowInTimezone(timezone);
+    // 用户 TZ 下的星期（0=周日..6=周六），供 weekday 规则判断。
+    // 用 TZ 日历日期算，避免 UTC 星期与用户本地星期错位。
+    const weekday = new Date(
+      Date.UTC(now.parts.year, now.parts.month - 1, now.parts.day)
+    ).getUTCDay();
 
     const normalizedHours = Array.isArray(config.NOTIFICATION_HOURS)
       ? config.NOTIFICATION_HOURS
@@ -172,7 +178,8 @@ export async function checkExpiringSubscriptions(env) {
           daysDiff,
           hoursDiff,
           nowIso: now.utc.toISOString(),
-          lastFireAtIso
+          lastFireAtIso,
+          weekday
         });
         if (!decision.fire) continue;
         matchedCount++;

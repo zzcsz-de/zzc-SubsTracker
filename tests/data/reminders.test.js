@@ -98,6 +98,42 @@ describe('reminders.repo', () => {
     expect(b.repeatInterval).toBe(24);
   });
 
+  it('normalizeRule：weekday 保留 days，去重排序、过滤非法值', () => {
+    const r = repo.normalizeRule({ type: 'weekday', value: 9, unit: 'hours', days: [5, 1, 1, 9, -1, '3'] });
+    expect(r.type).toBe('weekday');
+    expect(r.days).toEqual([1, 3, 5]);
+    expect(r.value).toBe(0);
+    expect(r.unit).toBe('days');
+  });
+
+  it('normalizeRule：weekday 缺 days 时默认周一至周五', () => {
+    expect(repo.normalizeRule({ type: 'weekday' }).days).toEqual([1, 2, 3, 4, 5]);
+    expect(repo.normalizeRule({ type: 'weekday', days: [] }).days).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('normalizeRule：非 weekday 类型不存 days', () => {
+    const r = repo.normalizeRule({ type: 'before_expiry', value: 7, unit: 'days', days: [1, 2] });
+    expect(r.days).toBeNull();
+  });
+
+  it('formatWeekdayDays：常见组合', () => {
+    expect(repo.formatWeekdayDays([1, 2, 3, 4, 5])).toBe('每周一至五');
+    expect(repo.formatWeekdayDays([0, 6])).toBe('每周六/日');
+    expect(repo.formatWeekdayDays([0, 1, 2, 3, 4, 5, 6])).toBe('每天');
+    expect(repo.formatWeekdayDays([1, 3, 5])).toBe('每周一/三/五');
+    expect(repo.formatWeekdayDays([0])).toBe('每周日');
+    expect(repo.formatWeekdayDays(null)).toBe('每周一至五');
+  });
+
+  it('formatRulesSummary：含 weekday 规则', () => {
+    const summary = repo.formatRulesSummary([
+      { id: '1', type: 'before_expiry', value: 7, unit: 'days', isEnabled: true, createdAt: '' },
+      { id: '2', type: 'weekday', value: 0, unit: 'days', days: [1, 2, 3, 4, 5], isEnabled: true, createdAt: '' }
+    ]);
+    expect(summary).toContain('提前 7 天');
+    expect(summary).toContain('每周一至五');
+  });
+
   it('formatRulesSummary：多规则摘要', () => {
     const summary = repo.formatRulesSummary([
       { id: '1', type: 'before_expiry', value: 30, unit: 'days', isEnabled: true, createdAt: '' },

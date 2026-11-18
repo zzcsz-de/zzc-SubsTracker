@@ -5,9 +5,10 @@
  * 数据结构：reminder_rules:{subId} = JSON 数组，每条规则形如：
  * {
  *   id: string,                                 // UUID
- *   type: 'before_expiry' | 'on_expiry' | 'after_expiry',
- *   value: number,                              // 数值（如 7）
+ *   type: 'before_expiry' | 'on_expiry' | 'after_expiry' | 'weekday',
+ *   value: number,                              // 数值（如 7）；weekday 类型不用，固定 0
  *   unit: 'days' | 'hours',
+ *   days: number[] | null,                      // 仅 weekday 用：0=周日..6=周六，默认 [1,2,3,4,5]
  *   repeatInterval: number | null,              // 单位：小时；仅 after_expiry 用
  *   repeatUntil: 'renewed' | 'acknowledged' | 'never',
  *   isEnabled: boolean,
@@ -23,14 +24,53 @@ const KEY_PREFIX = 'reminder_rules:';
 /**
  * @typedef {Object} ReminderRule
  * @property {string} id
- * @property {'before_expiry'|'on_expiry'|'after_expiry'} type
+ * @property {'before_expiry'|'on_expiry'|'after_expiry'|'weekday'} type
  * @property {number} value
  * @property {'days'|'hours'} unit
+ * @property {number[]|null} [days]
  * @property {number|null} [repeatInterval]
  * @property {'renewed'|'acknowledged'|'never'} [repeatUntil]
  * @property {boolean} isEnabled
  * @property {string} createdAt
  */
+
+/** 默认工作日：周一至周五（0=周日..6=周六，与 Date.getDay() 一致） */
+export const DEFAULT_WEEKDAYS = [1, 2, 3, 4, 5];
+
+/** 星期中文名，按 0=周日..6=周六索引 */
+const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+
+/**
+ * 归一化 weekday 规则的 days：只留 0-6 的整数，去重升序；
+ * 为空或非法时回退默认工作日 [1,2,3,4,5]。
+ *
+ * @param {any} input
+ * @returns {number[]}
+ */
+export function normalizeWeekdayDays(input) {
+  const list = (Array.isArray(input) ? input : [])
+    .map((d) => Number(d))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  const uniq = [...new Set(list)].sort((a, b) => a - b);
+  return uniq.length > 0 ? uniq : [...DEFAULT_WEEKDAYS];
+}
+
+/**
+ * 把 days 格式化为摘要文案，如「每周一至五」「每周六/日」「每天」「每周一/三/五」。
+ *
+ * @param {any} days
+ * @returns {string}
+ */
+export function formatWeekdayDays(days) {
+  const normalized = normalizeWeekdayDays(days);
+  const set = new Set(normalized);
+  if (normalized.length === 7) return '每天';
+  if (normalized.length === 5 && [1, 2, 3, 4, 5].every((d) => set.has(d))) return '每周一至五';
+  if (normalized.length === 2 && set.has(0) && set.has(6)) return '每周六/日';
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const names = order.filter((d) => set.has(d)).map((d) => WEEKDAY_NAMES[d]);
+  return '每周' + names.join('/');
+}
 
 /**
  * 生成新 rule 的默认 id（UUID）。
@@ -91,7 +131,7 @@ export function legacyFieldToRule(sub) {
  */
 export function normalizeRule(raw) {
   const r = raw || {};
-  const type = ['before_expiry', 'on_expiry', 'after_expiry'].includes(r.type)
+  const type = ['before_expiry', 'on_expiry', 'after_expiry', 'weekday'].includes(r.type)
     ? r.type
     : 'before_expiry';
   const unit = r.unit === 'hours' ? 'hours' : 'days';
@@ -103,11 +143,14 @@ export function normalizeRule(raw) {
   const repeatUntil = ['renewed', 'acknowledged', 'never'].includes(r.repeatUntil)
     ? r.repeatUntil
     : 'renewed';
+  // weekday 规则的 value/unit 无意义，固定 0/days；其余类型不存 days
+  const days = type === 'weekday' ? normalizeWeekdayDays(r.days) : null;
   return {
     id: typeof r.id === 'string' && r.id !== '' ? r.id : makeRuleId(),
     type,
-    value,
-    unit,
+    value: type === 'weekday' ? 0 : value,
+    unit: type === 'weekday' ? 'days' : unit,
+    days,
     repeatInterval,
     repeatUntil,
     isEnabled: r.isEnabled !== false,
@@ -270,6 +313,9 @@ export function formatRulesSummary(rules) {
     const interval = after.repeatInterval && after.repeatInterval > 0 ? after.repeatInterval : 24;
     parts.push(`到期后每 ${interval} 小时`);
   }
+  list
+    .filter((r) => r.type === 'weekday')
+    .forEach((r) => parts.push(formatWeekdayDays(r.days)));
 
   return parts.length > 0 ? parts.join(' · ') : '未设置提醒';
 }

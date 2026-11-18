@@ -180,4 +180,68 @@ describe('日级去重与成功后占位', () => {
     // shouldFire 因 lastFire 拒绝 → matched 可为 0
     expect(second.sentCount).toBe(0);
   });
+
+  it('weekday：周一触发、同天去重、周二不触发', async () => {
+    vi.useFakeTimers();
+    // 2026-06-01 是周一
+    vi.setSystemTime(new Date('2026-06-01T08:00:00Z'));
+    await env.SUBSCRIPTIONS_KV.put(
+      'config',
+      JSON.stringify({
+        TIMEZONE: 'UTC',
+        NOTIFICATION_HOURS: [],
+        ENABLED_NOTIFIERS: ['webhook'],
+        WEBHOOK_URL: 'https://example.com/h',
+        WEBHOOK_METHOD: 'POST'
+      })
+    );
+    await subRepo.save(env, {
+      id: 'wd-1',
+      name: 'WeekdayRule',
+      expiryDate: '2026-06-08T00:00:00.000Z',
+      isActive: true,
+      autoRenew: false
+    });
+    await remindersRepo.replaceForSubscription(env, 'wd-1', [
+      remindersRepo.normalizeRule({
+        id: 'rw',
+        type: 'weekday',
+        value: 0,
+        unit: 'days',
+        days: [1, 2, 3, 4, 5],
+        isEnabled: true
+      })
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        /** @type {any} */ ({
+          ok: true,
+          json: async () => ({ ok: true }),
+          text: async () => 'ok'
+        })
+    );
+
+    const monday = await checkExpiringSubscriptions(env);
+    expect(monday.matchedCount).toBeGreaterThanOrEqual(1);
+    expect(monday.sentCount).toBeGreaterThanOrEqual(1);
+
+    // 同一天晚些时候：按天去重，不再发送
+    vi.setSystemTime(new Date('2026-06-01T20:00:00Z'));
+    const mondayEvening = await checkExpiringSubscriptions(env);
+    expect(mondayEvening.dedupedCount).toBeGreaterThanOrEqual(1);
+    expect(mondayEvening.sentCount).toBe(0);
+
+    // 周二：同样是工作日，应再次触发
+    vi.setSystemTime(new Date('2026-06-02T08:00:00Z'));
+    const tuesday = await checkExpiringSubscriptions(env);
+    expect(tuesday.matchedCount).toBeGreaterThanOrEqual(1);
+    expect(tuesday.sentCount).toBeGreaterThanOrEqual(1);
+
+    // 周六：不在选中星期，不触发
+    vi.setSystemTime(new Date('2026-06-06T08:00:00Z'));
+    const saturday = await checkExpiringSubscriptions(env);
+    expect(saturday.matchedCount).toBe(0);
+    expect(saturday.sentCount).toBe(0);
+  });
 });

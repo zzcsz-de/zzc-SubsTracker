@@ -14,6 +14,8 @@
  * - after_expiry: 已过期场景。每隔 repeatInterval 小时触发一次，直到达到终止条件
  *   （renewed/acknowledged/never）。本引擎不关心终止判断（由 scheduler 在加载规则前过滤），
  *   但会校验"距上次触发是否超过 repeatInterval"。
+ * - weekday: 与到期日无关。days 为选中的星期（0=周日..6=周六），当天是选中星期时触发，
+ *   每天最多一次（去重由 scheduler 按本地日处理）。
  *
  */
 
@@ -27,6 +29,7 @@
  * @property {number} hoursDiff 距到期小时数（可为负数 = 已过期小时数）
  * @property {string} [lastFireAtIso] 同一规则上次触发的 ISO 时间（用于 after_expiry 重复间隔）
  * @property {string} [nowIso] 当前 ISO 时间，默认 new Date().toISOString()
+ * @property {number} [weekday] 当前星期（用户 TZ；0=周日..6=周六），仅 weekday 规则用
  */
 
 /**
@@ -59,6 +62,8 @@ export function shouldFire(rule, ctx) {
       return decideOnExpiry(rule, ctx);
     case 'after_expiry':
       return decideAfterExpiry(rule, ctx);
+    case 'weekday':
+      return decideWeekday(rule, ctx);
     default:
       return { fire: false, reason: 'unknown_rule_type' };
   }
@@ -144,6 +149,28 @@ function decideAfterExpiry(rule, ctx) {
 }
 
 /**
+ * weekday 规则：今天是选中的星期之一即触发（与到期日无关）。
+ * weekday 优先用 scheduler 传入的用户 TZ 星期；未传时用 nowIso 的 UTC 星期回退。
+ *
+ * @param {ReminderRule} rule
+ * @param {FireContext} ctx
+ * @returns {FireDecision}
+ */
+function decideWeekday(rule, ctx) {
+  const days = Array.isArray(rule.days) ? rule.days : [];
+  if (days.length === 0) return { fire: false, reason: 'weekday_no_days' };
+
+  let weekday = ctx.weekday;
+  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+    const now = ctx.nowIso ? new Date(ctx.nowIso) : new Date();
+    weekday = now.getUTCDay();
+  }
+  return days.includes(weekday)
+    ? { fire: true, reason: `weekday_${weekday}` }
+    : { fire: false, reason: `weekday_${weekday}_not_selected` };
+}
+
+/**
  * 计算规则的下次触发时间（ISO 字符串）。
  *
  * @param {ReminderRule} rule
@@ -182,6 +209,21 @@ export function getNextFireTime(rule, expiryDateIso, nowIso) {
     const periods = Math.ceil(elapsed / (interval * MS_HOUR));
     const nextFire = expiry + periods * interval * MS_HOUR;
     return new Date(nextFire).toISOString();
+  }
+
+  if (rule.type === 'weekday') {
+    // 与到期日无关：找最近一个选中星期的日期（00:00 UTC）。
+    // 注意：实际发送还受 NOTIFICATION_HOURS 限制，这里只给"哪一天"。
+    const days = Array.isArray(rule.days) && rule.days.length > 0 ? rule.days : [1, 2, 3, 4, 5];
+    const start = new Date(now);
+    start.setUTCHours(0, 0, 0, 0);
+    for (let i = 0; i < 8; i++) {
+      const d = new Date(start.getTime() + i * MS_DAY);
+      if (days.includes(d.getUTCDay()) && d.getTime() >= now) {
+        return d.toISOString();
+      }
+    }
+    return null;
   }
 
   return null;

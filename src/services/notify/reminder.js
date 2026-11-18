@@ -1,6 +1,7 @@
 import { formatTimeInTimezone, formatTimezoneDisplay, getTimezoneDateParts } from '../../core/time.js';
 import { lunarCalendar } from '../../core/lunar.js';
 import { formatAmount } from '../../core/currency-format.js';
+import { formatWeekdayDays } from '../../data/reminders.repo.js';
 
 /**
  * 按用户时区把到期日转成农历展示文案，避免用 Date 本地分量导致差一天。
@@ -66,6 +67,7 @@ function formatMatchedReminderRule(rule) {
   if (rule.type === 'after_expiry') {
     return `到期后每 ${rule.repeatInterval || 24} 小时`;
   }
+  if (rule.type === 'weekday') return formatWeekdayDays(rule.days);
   if (rule.value === 0) return rule.unit === 'hours' ? '到期当小时' : '到期当天';
   return `提前 ${rule.value} ${rule.unit === 'hours' ? '小时' : '天'}`;
 }

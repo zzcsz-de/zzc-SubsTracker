@@ -3,7 +3,7 @@
  * 提醒规则触发引擎单元测试（表驱动）
  */
 import { describe, it, expect } from 'vitest';
-import { shouldFire } from '../../../src/services/notify/reminder-engine.js';
+import { shouldFire, getNextFireTime } from '../../../src/services/notify/reminder-engine.js';
 
 /**
  * @param {Partial<import('../../../src/data/reminders.repo.js').ReminderRule>} r
@@ -144,5 +144,71 @@ describe('after_expiry', () => {
       nowIso: '2026-05-24T20:00:00Z' // 10h 后，未到 24h
     });
     expect(result.fire).toBe(false);
+  });
+});
+
+describe('weekday', () => {
+  it('days=[1,2,3,4,5], weekday=1（周一）→ 命中，与到期日无关', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1, 2, 3, 4, 5] });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1 }).fire).toBe(true);
+    // 已过期也照样提醒（按星期规则与到期日无关）
+    expect(shouldFire(r, { daysDiff: -5, hoursDiff: -120, weekday: 1 }).fire).toBe(true);
+  });
+
+  it('days=[1,2,3,4,5], weekday=6（周六）→ 不命中', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1, 2, 3, 4, 5] });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 6 }).fire).toBe(false);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 0 }).fire).toBe(false);
+  });
+
+  it('days=[0,6] 仅周末：周日命中、周一不命中', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [0, 6] });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 0 }).fire).toBe(true);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 6 }).fire).toBe(true);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1 }).fire).toBe(false);
+  });
+
+  it('days 为空 → 不触发', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [] });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1 }).fire).toBe(false);
+  });
+
+  it('isEnabled=false → 不触发', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1], isEnabled: false });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1 }).fire).toBe(false);
+  });
+
+  it('未传 weekday 时用 nowIso 的 UTC 星期回退（2026-06-01 是周一）', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1] });
+    expect(
+      shouldFire(r, { daysDiff: 30, hoursDiff: 720, nowIso: '2026-06-01T08:00:00Z' }).fire
+    ).toBe(true);
+    expect(
+      shouldFire(r, { daysDiff: 30, hoursDiff: 720, nowIso: '2026-06-02T08:00:00Z' }).fire
+    ).toBe(false);
+  });
+});
+
+describe('getNextFireTime / weekday', () => {
+  it('days=[2]，现在周一 → 下次是周二 00:00', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [2] });
+    expect(getNextFireTime(r, '2026-06-08T00:00:00.000Z', '2026-06-01T08:00:00Z')).toBe(
+      '2026-06-02T00:00:00.000Z'
+    );
+  });
+
+  it('days=[1]，现在周一 08:00（今天 00:00 已过）→ 下次是下周一', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1] });
+    expect(getNextFireTime(r, '2026-06-08T00:00:00.000Z', '2026-06-01T08:00:00Z')).toBe(
+      '2026-06-08T00:00:00.000Z'
+    );
+  });
+
+  it('days 缺失 → 按默认工作日', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days' });
+    // 2026-06-06 是周六，下一个工作日是周一 2026-06-08
+    expect(getNextFireTime(r, '2026-06-08T00:00:00.000Z', '2026-06-06T08:00:00Z')).toBe(
+      '2026-06-08T00:00:00.000Z'
+    );
   });
 });
