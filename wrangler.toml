@@ -4,10 +4,10 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 [env.production]
-name = "subscription-manager"
+name = "zzc-substracker"
 
 [env.staging]
-name = "subscription-manager-staging"
+name = "zzc-substracker"
 
 # KV 命名空间配置（默认模板不预设固定 ID，运行 npm run setup 自动生成）
 
