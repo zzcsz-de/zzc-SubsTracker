@@ -43,7 +43,8 @@ async function testSingleSubscriptionNotification(id, env) {
     const calendarType = subscription.useLunar ? '农历' : '公历';
     const autoRenewText = subscription.autoRenew ? '是' : '否';
     const formattedAmount = formatAmount(subscription.amount, subscription.currency || 'CNY');
-    const amountText = formattedAmount ? `\n金额: ${formattedAmount}/周期` : '';
+    const isFreeAmount = subscription.amount !== null && subscription.amount !== undefined && subscription.amount !== '' && Number(subscription.amount) === 0;
+    const amountText = isFreeAmount ? '\n金额: 免费' : (formattedAmount ? `\n金额: ${formattedAmount}/周期` : '');
 
     const categoryText = subscription.category ? subscription.category : '未分类';
 

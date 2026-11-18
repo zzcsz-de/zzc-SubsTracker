@@ -114,7 +114,8 @@ function formatNotificationContent(subscriptions, config) {
     const calendarType = sub.useLunar ? '农历' : '公历';
     const autoRenewText = sub.autoRenew ? '是' : '否';
     const formattedAmount = formatAmount(sub.amount, sub.currency || 'CNY');
-    const amountText = formattedAmount ? `\n金额: ${formattedAmount}/周期` : '';
+    const isFreeAmount = sub.amount !== null && sub.amount !== undefined && sub.amount !== '' && Number(sub.amount) === 0;
+    const amountText = isFreeAmount ? '\n金额: 免费' : (formattedAmount ? `\n金额: ${formattedAmount}/周期` : '');
 
     const subscriptionContent = `${statusEmoji} **${sub.name}**
 类型: ${typeText} ${periodText}
