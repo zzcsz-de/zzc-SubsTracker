@@ -415,7 +415,7 @@
                 ${s.customType?`<span class="list-item-badge">${s.customType}</span>`:''}
               </div>
             </div>
-            <div class="list-item-amount">${getSymbol(s.currency)}${(s.amount||0).toFixed(2)}</div>
+            <div class="list-item-amount">${s.amount !== null && s.amount !== undefined && Number(s.amount) === 0 ? '<span style="color:#16a34a;font-weight:600">免费</span>' : getSymbol(s.currency) + (s.amount||0).toFixed(2)}</div>
           </div>
         `).join('');
         

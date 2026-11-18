@@ -581,6 +581,10 @@
                   class="h-10 w-full px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
               </div>
             </div>
+            <label class="mt-2 inline-flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer select-none">
+              <input type="checkbox" id="isFree" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+              免费
+            </label>
             <p class="mt-1 text-xs text-gray-500">用于统计支出和生成仪表盘</p>
           </div>
 
@@ -1828,12 +1832,14 @@ const lunarBiz = {
         const currencySymbol = currencySymbols[subscription.currency] || '¥';
 
         const hasAmount = subscription.amount !== null && subscription.amount !== undefined && !Number.isNaN(Number(subscription.amount));
-        const amountHtml = hasAmount
-          ? '<div class="flex items-center gap-1">' +
+        const amountHtml = !hasAmount
+          ? '<span class="text-xs text-gray-400">未设置</span>'
+          : Number(subscription.amount) === 0
+            ? '<span class="text-xs font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded">免费</span>'
+            : '<div class="flex items-center gap-1">' +
               '<span class="text-xs text-gray-500 font-bold">' + currencySymbol + '</span>' +
               '<span class="text-sm font-medium text-gray-900">' + Number(subscription.amount).toFixed(2) + '</span>' +
-            '</div>'
-          : '<span class="text-xs text-gray-400">未设置</span>';
+            '</div>';
 
         row.innerHTML =
           '<td data-label="名称" class="px-4 py-3"><div class="td-content-wrapper">' +
@@ -2623,6 +2629,7 @@ const lunarBiz = {
       document.body.classList.add('overflow-hidden'); // 禁止背景滚动
 
       document.getElementById('subscriptionForm').reset();
+      updateFreeState();
       document.getElementById('currency').value = 'CNY'; // 默认设置为CNY
       document.getElementById('subscriptionId').value = '';
       clearFieldErrors();
@@ -2674,6 +2681,8 @@ const lunarBiz = {
         document.getElementById('notes').value = subscription.notes || '';
         document.getElementById('amount').value =
           subscription.amount !== null && subscription.amount !== undefined ? subscription.amount : '';
+        document.getElementById('isFree').checked = subscription.amount === 0;
+        updateFreeState();
         document.getElementById('currency').value = subscription.currency || 'CNY';
         document.getElementById('isActive').checked = subscription.isActive !== false;
         document.getElementById('autoRenew').checked = subscription.autoRenew !== false;
@@ -3469,6 +3478,21 @@ const lunarBiz = {
       }
     });
     
+    // 免费选项：勾选后金额输入框变灰禁用，保存时金额记为 0
+    function updateFreeState() {
+      const freeCheckbox = document.getElementById('isFree');
+      const amountInput = document.getElementById('amount');
+      if (!freeCheckbox || !amountInput) return;
+      const isFree = freeCheckbox.checked;
+      amountInput.disabled = isFree;
+      amountInput.classList.toggle('bg-gray-100', isFree);
+      amountInput.classList.toggle('text-gray-400', isFree);
+      amountInput.classList.toggle('cursor-not-allowed', isFree);
+      if (isFree) amountInput.value = '';
+    }
+
+    document.getElementById('isFree').addEventListener('change', updateFreeState);
+
     document.getElementById('subscriptionForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       
@@ -3493,7 +3517,7 @@ const lunarBiz = {
         subscriptionMode: document.getElementById('subscriptionMode').value, // 新增修改，表单提交时带上 subscriptionMode 字段
         notes: document.getElementById('notes').value.trim() || '',
         currency: document.getElementById('currency').value, // 新增修改，表单提交时带上 currency 字段
-        amount: document.getElementById('amount').value === '' ? null : parseFloat(document.getElementById('amount').value),
+        amount: document.getElementById('isFree').checked ? 0 : (document.getElementById('amount').value === '' ? null : parseFloat(document.getElementById('amount').value)),
         isActive: document.getElementById('isActive').checked,
         autoRenew: document.getElementById('autoRenew').checked,
         startDate: document.getElementById('startDate').value,
@@ -3569,6 +3593,8 @@ const lunarBiz = {
           document.getElementById('category').value = subscription.category || '';
           document.getElementById('notes').value = subscription.notes || '';
           document.getElementById('amount').value = subscription.amount !== null && subscription.amount !== undefined ? subscription.amount : '';
+          document.getElementById('isFree').checked = subscription.amount === 0;
+          updateFreeState();
           document.getElementById('currency').value = subscription.currency || 'CNY'; // 默认设置为 CNY
           document.getElementById('isActive').checked = subscription.isActive !== false;
           document.getElementById('autoRenew').checked = subscription.autoRenew !== false;
