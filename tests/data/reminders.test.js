@@ -111,9 +111,16 @@ describe('reminders.repo', () => {
     expect(repo.normalizeRule({ type: 'weekday', days: [] }).days).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it('normalizeRule：非 weekday 类型不存 days', () => {
-    const r = repo.normalizeRule({ type: 'before_expiry', value: 7, unit: 'days', days: [1, 2] });
+  it('normalizeRule：weekday 的 hours 去重排序、过滤非法值，缺失为 null', () => {
+    expect(repo.normalizeRule({ type: 'weekday', hours: [22, 11, 11, 25, -1, '13'] }).hours).toEqual([11, 13, 22]);
+    expect(repo.normalizeRule({ type: 'weekday' }).hours).toBeNull();
+    expect(repo.normalizeRule({ type: 'weekday', hours: [] }).hours).toBeNull();
+  });
+
+  it('normalizeRule：非 weekday 类型不存 days/hours', () => {
+    const r = repo.normalizeRule({ type: 'before_expiry', value: 7, unit: 'days', days: [1, 2], hours: [11] });
     expect(r.days).toBeNull();
+    expect(r.hours).toBeNull();
   });
 
   it('formatWeekdayDays：常见组合', () => {
@@ -123,6 +130,20 @@ describe('reminders.repo', () => {
     expect(repo.formatWeekdayDays([1, 3, 5])).toBe('每周一/三/五');
     expect(repo.formatWeekdayDays([0])).toBe('每周日');
     expect(repo.formatWeekdayDays(null)).toBe('每周一至五');
+  });
+
+  it('formatWeekdayDays：带 hours 追加时间', () => {
+    expect(repo.formatWeekdayDays([1, 2, 3, 4, 5], [11, 13, 22])).toBe('每周一至五 11/13/22点');
+    expect(repo.formatWeekdayDays([3], [13, 22])).toBe('每周三 13/22点');
+    expect(repo.formatWeekdayDays([1, 2, 3, 4, 5], null)).toBe('每周一至五');
+    expect(repo.formatWeekdayDays([1, 2, 3, 4, 5], [])).toBe('每周一至五');
+  });
+
+  it('formatRulesSummary：含带时间的 weekday 规则', () => {
+    const summary = repo.formatRulesSummary([
+      { id: '1', type: 'weekday', value: 0, unit: 'days', days: [1, 2, 3, 4, 5], hours: [11, 13, 22], isEnabled: true, createdAt: '' }
+    ]);
+    expect(summary).toBe('每周一至五 11/13/22点');
   });
 
   it('formatRulesSummary：含 weekday 规则', () => {

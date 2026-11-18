@@ -9,6 +9,7 @@
  *   value: number,                              // 数值（如 7）；weekday 类型不用，固定 0
  *   unit: 'days' | 'hours',
  *   days: number[] | null,                      // 仅 weekday 用：0=周日..6=周六，默认 [1,2,3,4,5]
+ *   hours: number[] | null,                     // 仅 weekday 用：0-23 的整点小时，如 [11,13,22]；null = 不限时间
  *   repeatInterval: number | null,              // 单位：小时；仅 after_expiry 用
  *   repeatUntil: 'renewed' | 'acknowledged' | 'never',
  *   isEnabled: boolean,
@@ -28,6 +29,7 @@ const KEY_PREFIX = 'reminder_rules:';
  * @property {number} value
  * @property {'days'|'hours'} unit
  * @property {number[]|null} [days]
+ * @property {number[]|null} [hours]
  * @property {number|null} [repeatInterval]
  * @property {'renewed'|'acknowledged'|'never'} [repeatUntil]
  * @property {boolean} isEnabled
@@ -56,20 +58,43 @@ export function normalizeWeekdayDays(input) {
 }
 
 /**
+ * 归一化 weekday 规则的 hours：只留 0-23 的整数，去重升序；
+ * 为空或非法时返回 null（不限时间）。
+ *
+ * @param {any} input
+ * @returns {number[]|null}
+ */
+export function normalizeWeekdayHours(input) {
+  const list = (Array.isArray(input) ? input : [])
+    .map((h) => Number(h))
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  const uniq = [...new Set(list)].sort((a, b) => a - b);
+  return uniq.length > 0 ? uniq : null;
+}
+
+/**
  * 把 days 格式化为摘要文案，如「每周一至五」「每周六/日」「每天」「每周一/三/五」。
+ * 传 hours 时追加时间，如「每周一至五 11/13/22点」「每周三 13/22点」。
  *
  * @param {any} days
+ * @param {any} [hours]
  * @returns {string}
  */
-export function formatWeekdayDays(days) {
+export function formatWeekdayDays(days, hours) {
   const normalized = normalizeWeekdayDays(days);
   const set = new Set(normalized);
-  if (normalized.length === 7) return '每天';
-  if (normalized.length === 5 && [1, 2, 3, 4, 5].every((d) => set.has(d))) return '每周一至五';
-  if (normalized.length === 2 && set.has(0) && set.has(6)) return '每周六/日';
-  const order = [1, 2, 3, 4, 5, 6, 0];
-  const names = order.filter((d) => set.has(d)).map((d) => WEEKDAY_NAMES[d]);
-  return '每周' + names.join('/');
+  let text;
+  if (normalized.length === 7) text = '每天';
+  else if (normalized.length === 5 && [1, 2, 3, 4, 5].every((d) => set.has(d))) text = '每周一至五';
+  else if (normalized.length === 2 && set.has(0) && set.has(6)) text = '每周六/日';
+  else {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const names = order.filter((d) => set.has(d)).map((d) => WEEKDAY_NAMES[d]);
+    text = '每周' + names.join('/');
+  }
+  const normalizedHours = normalizeWeekdayHours(hours);
+  if (normalizedHours) text += ` ${normalizedHours.join('/')}点`;
+  return text;
 }
 
 /**
@@ -143,14 +168,16 @@ export function normalizeRule(raw) {
   const repeatUntil = ['renewed', 'acknowledged', 'never'].includes(r.repeatUntil)
     ? r.repeatUntil
     : 'renewed';
-  // weekday 规则的 value/unit 无意义，固定 0/days；其余类型不存 days
+  // weekday 规则的 value/unit 无意义，固定 0/days；其余类型不存 days/hours
   const days = type === 'weekday' ? normalizeWeekdayDays(r.days) : null;
+  const hours = type === 'weekday' ? normalizeWeekdayHours(r.hours) : null;
   return {
     id: typeof r.id === 'string' && r.id !== '' ? r.id : makeRuleId(),
     type,
     value: type === 'weekday' ? 0 : value,
     unit: type === 'weekday' ? 'days' : unit,
     days,
+    hours,
     repeatInterval,
     repeatUntil,
     isEnabled: r.isEnabled !== false,
@@ -315,7 +342,7 @@ export function formatRulesSummary(rules) {
   }
   list
     .filter((r) => r.type === 'weekday')
-    .forEach((r) => parts.push(formatWeekdayDays(r.days)));
+    .forEach((r) => parts.push(formatWeekdayDays(r.days, r.hours)));
 
   return parts.length > 0 ? parts.join(' · ') : '未设置提醒';
 }

@@ -1392,8 +1392,8 @@ const lunarBiz = {
       }
     }
 
-    // weekday 规则摘要：days 为 0=周日..6=周六；缺省按周一至周五
-    function formatWeekdayDaysText(days) {
+    // weekday 规则摘要：days 为 0=周日..6=周六；缺省按周一至周五；hours 为整点小时数组
+    function formatWeekdayDaysText(days, hours) {
       var names = ['日', '一', '二', '三', '四', '五', '六'];
       var list = Array.isArray(days) ? days : [];
       var normalized = [];
@@ -1407,12 +1407,26 @@ const lunarBiz = {
       if (normalized.length === 0) normalized = [1, 2, 3, 4, 5];
       var seen = {};
       normalized.forEach(function (d) { seen[d] = true; });
-      if (normalized.length === 7) return '每天';
-      if (normalized.length === 5 && [1, 2, 3, 4, 5].every(function (d) { return seen[d]; })) return '每周一至五';
-      if (normalized.length === 2 && seen[0] && seen[6]) return '每周六/日';
-      var order = [1, 2, 3, 4, 5, 6, 0];
-      var picked = order.filter(function (d) { return seen[d]; }).map(function (d) { return names[d]; });
-      return '每周' + picked.join('/');
+      var text;
+      if (normalized.length === 7) text = '每天';
+      else if (normalized.length === 5 && [1, 2, 3, 4, 5].every(function (d) { return seen[d]; })) text = '每周一至五';
+      else if (normalized.length === 2 && seen[0] && seen[6]) text = '每周六/日';
+      else {
+        var order = [1, 2, 3, 4, 5, 6, 0];
+        var picked = order.filter(function (d) { return seen[d]; }).map(function (d) { return names[d]; });
+        text = '每周' + picked.join('/');
+      }
+      var hoursList = Array.isArray(hours) ? hours : [];
+      var hoursNormalized = [];
+      hoursList.forEach(function (h) {
+        var n = Number(h);
+        if (Number.isInteger(n) && n >= 0 && n <= 23 && hoursNormalized.indexOf(n) === -1) {
+          hoursNormalized.push(n);
+        }
+      });
+      hoursNormalized.sort(function (a, b) { return a - b; });
+      if (hoursNormalized.length > 0) text += ' ' + hoursNormalized.join('/') + '点';
+      return text;
     }
 
     function formatReminderRulesSummary(rules) {
@@ -1442,7 +1456,7 @@ const lunarBiz = {
         parts.push('到期后每 ' + interval + ' 小时');
       }
       list.filter(function (r) { return r.type === 'weekday'; }).forEach(function (r) {
-        parts.push(formatWeekdayDaysText(r.days));
+        parts.push(formatWeekdayDaysText(r.days, r.hours));
       });
       return parts.join(' · ');
     }
@@ -3839,6 +3853,14 @@ const lunarBiz = {
         return uniq.length > 0 ? uniq : DEFAULT_WEEKDAYS.slice();
       }
 
+      // 解析时间输入：提取所有数字，只留 0-23 的整点，去重升序；为空返回 null（不限时间）
+      // 接受 "11,13,22"、"11点13点22点"、"11 13 22" 等写法
+      function parseWeekdayHoursInput(value) {
+        const nums = String(value == null ? '' : value).match(/\d+/g) || [];
+        const uniq = Array.from(new Set(nums.map(d => Number(d)).filter(d => Number.isInteger(d) && d >= 0 && d <= 23))).sort((a, b) => a - b);
+        return uniq.length > 0 ? uniq : null;
+      }
+
       const UNITS = [
         { value: 'days', label: '天' },
         { value: 'hours', label: '小时' }
@@ -3893,6 +3915,7 @@ const lunarBiz = {
             <span class="inline-flex items-center gap-1.5 text-xs text-gray-600">
               ${WEEKDAYS.map(d => `<label class="inline-flex items-center cursor-pointer"><input type="checkbox" class="rule-weekday mr-0.5 form-checkbox h-4 w-4 text-indigo-600" value="${d.value}" ${days.includes(d.value) ? 'checked' : ''}>${d.label}</label>`).join('')}
             </span>
+            <input type="text" class="rule-hours w-28 px-2 py-1 text-xs border border-gray-300 rounded" value="${(rule.hours || []).join(',')}" placeholder="时间，如 11,13,22" title="整点小时，逗号分隔，如 11,13,22；留空则不限时间">
           ` : ''}
           ${isAfter ? `
             <span class="text-xs text-gray-500">每</span>
@@ -3936,6 +3959,8 @@ const lunarBiz = {
             // 按星期：读勾选的星期（全不勾按周一至周五）；value/unit 无意义
             const checked = Array.from(row.querySelectorAll('.rule-weekday:checked')).map(el => Number(el.value));
             rule.days = checked.length > 0 ? checked.sort((a, b) => a - b) : DEFAULT_WEEKDAYS.slice();
+            const hoursInput = row.querySelector('.rule-hours');
+            rule.hours = hoursInput ? parseWeekdayHoursInput(hoursInput.value) : null;
             rule.value = 0;
             rule.unit = 'days';
           } else {
@@ -3978,6 +4003,7 @@ const lunarBiz = {
           value: typeof r.value === 'number' ? r.value : 7,
           unit: r.unit || 'days',
           days: r.type === 'weekday' ? normalizeWeekdayDays(r.days) : null,
+          hours: r.type === 'weekday' ? parseWeekdayHoursInput(r.hours) : null,
           repeatInterval: r.repeatInterval == null ? null : Number(r.repeatInterval),
           repeatUntil: r.repeatUntil || 'renewed',
           isEnabled: r.isEnabled !== false

@@ -67,7 +67,7 @@ function formatMatchedReminderRule(rule) {
   if (rule.type === 'after_expiry') {
     return `到期后每 ${rule.repeatInterval || 24} 小时`;
   }
-  if (rule.type === 'weekday') return formatWeekdayDays(rule.days);
+  if (rule.type === 'weekday') return formatWeekdayDays(rule.days, rule.hours);
   if (rule.value === 0) return rule.unit === 'hours' ? '到期当小时' : '到期当天';
   return `提前 ${rule.value} ${rule.unit === 'hours' ? '小时' : '天'}`;
 }

@@ -15,7 +15,9 @@
  *   （renewed/acknowledged/never）。本引擎不关心终止判断（由 scheduler 在加载规则前过滤），
  *   但会校验"距上次触发是否超过 repeatInterval"。
  * - weekday: 与到期日无关。days 为选中的星期（0=周日..6=周六），当天是选中星期时触发，
- *   每天最多一次（去重由 scheduler 按本地日处理）。
+ *   每天最多一次（去重由 scheduler 按本地日处理）。hours 为选中的整点小时
+ *   （0-23，如 [11,13,22]）时，只在这些小时触发，且同一小时内只发一次；
+ *   hours 为空表示不限时间。
  *
  */
 
@@ -30,6 +32,7 @@
  * @property {string} [lastFireAtIso] 同一规则上次触发的 ISO 时间（用于 after_expiry 重复间隔）
  * @property {string} [nowIso] 当前 ISO 时间，默认 new Date().toISOString()
  * @property {number} [weekday] 当前星期（用户 TZ；0=周日..6=周六），仅 weekday 规则用
+ * @property {number} [hour] 当前小时（用户 TZ；0-23），仅 weekday 规则用
  */
 
 /**
@@ -150,7 +153,8 @@ function decideAfterExpiry(rule, ctx) {
 
 /**
  * weekday 规则：今天是选中的星期之一即触发（与到期日无关）。
- * weekday 优先用 scheduler 传入的用户 TZ 星期；未传时用 nowIso 的 UTC 星期回退。
+ * weekday/hour 优先用 scheduler 传入的用户 TZ 值；未传时用 nowIso 的 UTC 值回退。
+ * 设了 hours 时，只在选中的整点小时触发。
  *
  * @param {ReminderRule} rule
  * @param {FireContext} ctx
@@ -161,13 +165,20 @@ function decideWeekday(rule, ctx) {
   if (days.length === 0) return { fire: false, reason: 'weekday_no_days' };
 
   let weekday = ctx.weekday;
-  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+  let hour = ctx.hour;
+  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !Number.isInteger(hour) || hour < 0 || hour > 23) {
     const now = ctx.nowIso ? new Date(ctx.nowIso) : new Date();
-    weekday = now.getUTCDay();
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) weekday = now.getUTCDay();
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) hour = now.getUTCHours();
   }
-  return days.includes(weekday)
-    ? { fire: true, reason: `weekday_${weekday}` }
-    : { fire: false, reason: `weekday_${weekday}_not_selected` };
+  if (!days.includes(weekday)) {
+    return { fire: false, reason: `weekday_${weekday}_not_selected` };
+  }
+  const hours = Array.isArray(rule.hours) ? rule.hours : [];
+  if (hours.length > 0 && !hours.includes(hour)) {
+    return { fire: false, reason: `weekday_hour_${hour}_not_selected` };
+  }
+  return { fire: true, reason: `weekday_${weekday}_${hour}` };
 }
 
 /**
@@ -212,15 +223,25 @@ export function getNextFireTime(rule, expiryDateIso, nowIso) {
   }
 
   if (rule.type === 'weekday') {
-    // 与到期日无关：找最近一个选中星期的日期（00:00 UTC）。
-    // 注意：实际发送还受 NOTIFICATION_HOURS 限制，这里只给"哪一天"。
+    // 与到期日无关：找最近一个选中星期、选中小时的时刻（UTC）。
+    // 未设 hours 时返回当天 00:00；设了则返回最近的选中整点。
+    // 注意：实际发送还受 NOTIFICATION_HOURS 限制，这里只给"哪一天/哪一小时"。
     const days = Array.isArray(rule.days) && rule.days.length > 0 ? rule.days : [1, 2, 3, 4, 5];
+    const hours = Array.isArray(rule.hours) && rule.hours.length > 0
+      ? [...rule.hours].sort((a, b) => a - b)
+      : null;
     const start = new Date(now);
     start.setUTCHours(0, 0, 0, 0);
     for (let i = 0; i < 8; i++) {
       const d = new Date(start.getTime() + i * MS_DAY);
-      if (days.includes(d.getUTCDay()) && d.getTime() >= now) {
-        return d.toISOString();
+      if (!days.includes(d.getUTCDay())) continue;
+      if (!hours) {
+        if (d.getTime() >= now) return d.toISOString();
+        continue;
+      }
+      for (const h of hours) {
+        const cand = new Date(d.getTime() + h * MS_HOUR);
+        if (cand.getTime() >= now) return cand.toISOString();
       }
     }
     return null;

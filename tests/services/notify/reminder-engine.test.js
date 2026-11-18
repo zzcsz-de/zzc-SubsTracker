@@ -187,6 +187,38 @@ describe('weekday', () => {
       shouldFire(r, { daysDiff: 30, hoursDiff: 720, nowIso: '2026-06-02T08:00:00Z' }).fire
     ).toBe(false);
   });
+
+  it('设了 hours：只在选中小时触发', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1, 2, 3, 4, 5], hours: [11, 13, 22] });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 11 }).fire).toBe(true);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 13 }).fire).toBe(true);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 22 }).fire).toBe(true);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 12 }).fire).toBe(false);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 9 }).fire).toBe(false);
+  });
+
+  it('设了 hours 但星期不对 → 不触发', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [3], hours: [13, 22] });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 13 }).fire).toBe(false);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 3, hour: 13 }).fire).toBe(true);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 3, hour: 11 }).fire).toBe(false);
+  });
+
+  it('未设 hours：选中星期内任意小时都触发', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1, 2, 3, 4, 5], hours: null });
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 5 }).fire).toBe(true);
+    expect(shouldFire(r, { daysDiff: 30, hoursDiff: 720, weekday: 1, hour: 23 }).fire).toBe(true);
+  });
+
+  it('未传 hour 时用 nowIso 的 UTC 小时回退', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1], hours: [11] });
+    expect(
+      shouldFire(r, { daysDiff: 30, hoursDiff: 720, nowIso: '2026-06-01T11:00:00Z' }).fire
+    ).toBe(true);
+    expect(
+      shouldFire(r, { daysDiff: 30, hoursDiff: 720, nowIso: '2026-06-01T12:00:00Z' }).fire
+    ).toBe(false);
+  });
 });
 
 describe('getNextFireTime / weekday', () => {
@@ -209,6 +241,27 @@ describe('getNextFireTime / weekday', () => {
     // 2026-06-06 是周六，下一个工作日是周一 2026-06-08
     expect(getNextFireTime(r, '2026-06-08T00:00:00.000Z', '2026-06-06T08:00:00Z')).toBe(
       '2026-06-08T00:00:00.000Z'
+    );
+  });
+
+  it('设了 hours：现在周一 08:00 → 下次是今天 11:00', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1], hours: [11, 13, 22] });
+    expect(getNextFireTime(r, '2026-06-08T00:00:00.000Z', '2026-06-01T08:00:00Z')).toBe(
+      '2026-06-01T11:00:00.000Z'
+    );
+  });
+
+  it('设了 hours：现在周一 12:00 → 下次是今天 13:00', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1], hours: [11, 13, 22] });
+    expect(getNextFireTime(r, '2026-06-08T00:00:00.000Z', '2026-06-01T12:00:00Z')).toBe(
+      '2026-06-01T13:00:00.000Z'
+    );
+  });
+
+  it('设了 hours：现在周一 23:00（今天的小时都过了）→ 下周一 11:00', () => {
+    const r = rule({ type: 'weekday', value: 0, unit: 'days', days: [1], hours: [11, 13, 22] });
+    expect(getNextFireTime(r, '2026-06-08T00:00:00.000Z', '2026-06-01T23:00:00Z')).toBe(
+      '2026-06-08T11:00:00.000Z'
     );
   });
 });

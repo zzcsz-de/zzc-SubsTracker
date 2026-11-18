@@ -51,7 +51,8 @@ const DEDUPE_TTL_SEC = 60 * 60 * 48; // 48h
 const LAST_FIRE_TTL_SEC = 60 * 60 * 24 * 60; // 60 天
 
 /**
- * 日级规则（before_expiry/days、on_expiry）按本地日期去重；小时级与 after_expiry 按本地小时。
+ * 日级规则（before_expiry/days、on_expiry、未设 hours 的 weekday）按本地日期去重；
+ * 小时级、after_expiry 与设了 hours 的 weekday 按本地小时去重。
  * @param {import('../data/reminders.repo.js').ReminderRule} rule
  * @param {{ year: number, month: number, day: number, hourString: string }} nowParts
  */
@@ -59,7 +60,7 @@ function buildDedupeBucket(rule, nowParts) {
   const ymd = `${nowParts.year}${String(nowParts.month).padStart(2, '0')}${String(nowParts.day).padStart(2, '0')}`;
   const isDayRule =
     rule.type === 'on_expiry' ||
-    rule.type === 'weekday' ||
+    (rule.type === 'weekday' && !(Array.isArray(rule.hours) && rule.hours.length > 0)) ||
     (rule.type === 'before_expiry' && rule.unit !== 'hours');
   return isDayRule ? ymd : `${ymd}${nowParts.hourString}`;
 }
@@ -179,7 +180,8 @@ export async function checkExpiringSubscriptions(env) {
           hoursDiff,
           nowIso: now.utc.toISOString(),
           lastFireAtIso,
-          weekday
+          weekday,
+          hour: Number(now.hourString)
         });
         if (!decision.fire) continue;
         matchedCount++;

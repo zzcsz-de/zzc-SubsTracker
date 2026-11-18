@@ -244,4 +244,75 @@ describe('日级去重与成功后占位', () => {
     expect(saturday.matchedCount).toBe(0);
     expect(saturday.sentCount).toBe(0);
   });
+
+  it('weekday 设了 hours：只在选中小时触发，同小时去重、不同小时可再发', async () => {
+    vi.useFakeTimers();
+    await env.SUBSCRIPTIONS_KV.put(
+      'config',
+      JSON.stringify({
+        TIMEZONE: 'UTC',
+        NOTIFICATION_HOURS: [],
+        ENABLED_NOTIFIERS: ['webhook'],
+        WEBHOOK_URL: 'https://example.com/h',
+        WEBHOOK_METHOD: 'POST'
+      })
+    );
+    await subRepo.save(env, {
+      id: 'wdh-1',
+      name: 'WeekdayHours',
+      expiryDate: '2026-06-08T00:00:00.000Z',
+      isActive: true,
+      autoRenew: false
+    });
+    await remindersRepo.replaceForSubscription(env, 'wdh-1', [
+      remindersRepo.normalizeRule({
+        id: 'rwh',
+        type: 'weekday',
+        value: 0,
+        unit: 'days',
+        days: [1, 2, 3, 4, 5],
+        hours: [11, 13, 22],
+        isEnabled: true
+      })
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        /** @type {any} */ ({
+          ok: true,
+          json: async () => ({ ok: true }),
+          text: async () => 'ok'
+        })
+    );
+
+    // 周一 11:00：命中
+    vi.setSystemTime(new Date('2026-06-01T11:00:00Z'));
+    const at11 = await checkExpiringSubscriptions(env);
+    expect(at11.matchedCount).toBeGreaterThanOrEqual(1);
+    expect(at11.sentCount).toBeGreaterThanOrEqual(1);
+
+    // 周一 11:30：同一小时桶，去重不重发
+    vi.setSystemTime(new Date('2026-06-01T11:30:00Z'));
+    const at1130 = await checkExpiringSubscriptions(env);
+    expect(at1130.dedupedCount).toBeGreaterThanOrEqual(1);
+    expect(at1130.sentCount).toBe(0);
+
+    // 周一 12:00：不在选中小时，不命中
+    vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+    const at12 = await checkExpiringSubscriptions(env);
+    expect(at12.matchedCount).toBe(0);
+    expect(at12.sentCount).toBe(0);
+
+    // 周一 13:00：新的小时桶，再次发送
+    vi.setSystemTime(new Date('2026-06-01T13:00:00Z'));
+    const at13 = await checkExpiringSubscriptions(env);
+    expect(at13.matchedCount).toBeGreaterThanOrEqual(1);
+    expect(at13.sentCount).toBeGreaterThanOrEqual(1);
+
+    // 周二 11:00：新的一天，同样触发
+    vi.setSystemTime(new Date('2026-06-02T11:00:00Z'));
+    const tue11 = await checkExpiringSubscriptions(env);
+    expect(tue11.matchedCount).toBeGreaterThanOrEqual(1);
+    expect(tue11.sentCount).toBeGreaterThanOrEqual(1);
+  });
 });
